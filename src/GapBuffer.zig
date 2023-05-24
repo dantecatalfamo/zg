@@ -10,7 +10,7 @@ pub const GapBuffer = struct {
     buffer: std.ArrayList(u8),
     gap_start: usize,
     gap_end: usize,
-    point_pos: usize,
+    point_byte: usize,
     // XXX utf8: bool,
 
     pub fn init(allocator: mem.Allocator) !GapBuffer {
@@ -20,7 +20,7 @@ pub const GapBuffer = struct {
             .buffer = buffer,
             .gap_start = 0,
             .gap_end = init_gap_size,
-            .point_pos = 0,
+            .point_byte = 0,
             // XXX .utf8 = true,
         };
     }
@@ -39,37 +39,37 @@ pub const GapBuffer = struct {
 
     pub fn point(self: GapBuffer) usize {
         // XXX NOT UTF-8 AWARE
-        assert(self.point_pos <= self.gap_start or self.point_pos >= self.gap_end);
-        if (self.point_pos <= self.gap_start) {
-            return self.point_pos;
+        assert(self.point_byte <= self.gap_start or self.point_byte >= self.gap_end);
+        if (self.point_byte <= self.gap_start) {
+            return self.point_byte;
         } else {
-            return self.point_pos - self.gap_size();
+            return self.point_byte - self.gap_size();
         }
     }
 
     pub fn setPoint(self: *GapBuffer, position: usize) void {
         // XXX NOT UTF-8 AWARE!! Use std.unicode.Utf8View to set correctly
         if (position <= self.gap_start) {
-            self.point_pos = position;
+            self.point_byte = position;
         } else if (position < self.length()) {
-            self.point_pos = position + self.gap_size();
+            self.point_byte = position + self.gap_size();
         } else {
-            self.point_pos = self.length() + self.gap_size();
+            self.point_byte = self.length() + self.gap_size();
         }
     }
 
     pub fn format(self: GapBuffer, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_writer: anytype) !void {
         _ = options;
         _ = fmt;
-        try out_writer.print("(len:{d} cap:{d})[b:{d} e:{d} p:{d} P:{d}] ", .{ self.length(), self.buffer.items.len, self.gap_start, self.gap_end, self.point_pos, self.point() });
+        try out_writer.print("(len:{d} cap:{d})[b:{d} e:{d} p:{d} P:{d}] ", .{ self.length(), self.buffer.items.len, self.gap_start, self.gap_end, self.point_byte, self.point() });
 
-        if (self.point_pos == self.gap_start and self.point_pos == self.gap_end) {
-            try out_writer.print("{s}><[]{s}", .{ self.buffer.items[0..self.point_pos], self.buffer.items[self.point_pos..] });
+        if (self.point_byte == self.gap_start and self.point_byte == self.gap_end) {
+            try out_writer.print("{s}><[]{s}", .{ self.buffer.items[0..self.point_byte], self.buffer.items[self.point_byte..] });
             try out_writer.print("  /// {s}{s}", .{ self.buffer.items[0..self.gap_start], self.buffer.items[self.gap_end..] });
             return;
         }
-        if (self.point_pos <= self.gap_start) {
-            try out_writer.print("{s}><{s}", .{ self.buffer.items[0..self.point_pos], self.buffer.items[self.point_pos..self.gap_start]} );
+        if (self.point_byte <= self.gap_start) {
+            try out_writer.print("{s}><{s}", .{ self.buffer.items[0..self.point_byte], self.buffer.items[self.point_byte..self.gap_start]} );
         } else {
             try out_writer.print("{s}", .{ self.buffer.items[0..self.gap_start] });
         }
@@ -78,8 +78,8 @@ pub const GapBuffer = struct {
             try out_writer.writeByte('_');
         }
         try out_writer.writeByte(']');
-        if (self.point_pos >= self.gap_end) {
-            try out_writer.print("{s}><{s}", .{ self.buffer.items[self.gap_end..self.point_pos], self.buffer.items[self.point_pos..] });
+        if (self.point_byte >= self.gap_end) {
+            try out_writer.print("{s}><{s}", .{ self.buffer.items[self.gap_end..self.point_byte], self.buffer.items[self.point_byte..] });
         } else {
             try out_writer.print("{s}", .{ self.buffer.items[self.gap_end..] });
         }
@@ -107,7 +107,7 @@ pub const GapBuffer = struct {
     pub fn deleteBackward(self: *GapBuffer, bytes: usize) void {
         self.moveGapToPoint();
         self.gap_start = if (self.gap_start > bytes) self.gap_start - bytes else 0;
-        self.point_pos = self.gap_start;
+        self.point_byte = self.gap_start;
     }
 
     pub fn grow_gap(self: *GapBuffer, amount: usize) !void {
@@ -123,27 +123,27 @@ pub const GapBuffer = struct {
     }
 
     fn moveGapToPoint(self: *GapBuffer) void {
-        assert(self.point_pos <= self.gap_start or self.point_pos >= self.gap_end);
-        if (self.point_pos == self.gap_start) {
+        assert(self.point_byte <= self.gap_start or self.point_byte >= self.gap_end);
+        if (self.point_byte == self.gap_start) {
             return;
         }
-        if (self.point_pos == self.gap_end) {
-            self.point_pos = self.gap_start;
+        if (self.point_byte == self.gap_end) {
+            self.point_byte = self.gap_start;
             return;
         }
-        if (self.point_pos < self.gap_start) {
+        if (self.point_byte < self.gap_start) {
             const size = self.gap_size();
-            const source = self.buffer.items[self.point_pos..self.gap_start];
+            const source = self.buffer.items[self.point_byte..self.gap_start];
             var destination = self.buffer.items[self.gap_end-source.len..self.gap_end];
             mem.copyBackwards(u8, destination, source);
-            self.gap_start = self.point_pos;
+            self.gap_start = self.point_byte;
             self.gap_end = self.gap_start + size;
         } else {
             const size = self.gap_size();
-            const moved_items = self.buffer.items[self.gap_end..self.point_pos];
+            const moved_items = self.buffer.items[self.gap_end..self.point_byte];
             var destination = self.buffer.items[self.gap_start..self.gap_start+moved_items.len];
             mem.copyForwards(u8, destination, moved_items);
-            self.gap_start = self.point_pos - size;
+            self.gap_start = self.point_byte - size;
             self.gap_end = self.gap_start + size;
         }
     }
@@ -154,7 +154,7 @@ pub const GapBuffer = struct {
         assert(text.len <= self.gap_size());
         @memcpy(self.buffer.items[self.gap_start..self.gap_start+text.len], text);
         self.gap_start += text.len;
-        self.point_pos = self.gap_start;
+        self.point_byte = self.gap_start;
     }
 
     pub fn write(self: *GapBuffer, bytes: []const u8) WriteError!usize {
@@ -170,20 +170,20 @@ pub const GapBuffer = struct {
     }
 
     pub fn read(self: *GapBuffer, buffer: []u8) ReadError!usize {
-        if (self.point_pos < self.gap_start) {
-            const source_end = @min(self.gap_start, self.point_pos + buffer.len);
-            const source = self.buffer.items[self.point_pos..source_end];
+        if (self.point_byte < self.gap_start) {
+            const source_end = @min(self.gap_start, self.point_byte + buffer.len);
+            const source = self.buffer.items[self.point_byte..source_end];
             @memcpy(buffer[0..source.len], source);
-            self.point_pos += source.len;
+            self.point_byte += source.len;
             return source.len;
         } else {
-            if (self.point_pos == self.gap_start) {
-                self.point_pos = self.gap_end;
+            if (self.point_byte == self.gap_start) {
+                self.point_byte = self.gap_end;
             }
-            const source_end = @min(self.buffer.items.len, self.point_pos + buffer.len);
-            const source = self.buffer.items[self.point_pos..source_end];
+            const source_end = @min(self.buffer.items.len, self.point_byte + buffer.len);
+            const source = self.buffer.items[self.point_byte..source_end];
             @memcpy(buffer[0..source.len], source);
-            self.point_pos += source.len;
+            self.point_byte += source.len;
             return source.len;
         }
     }
